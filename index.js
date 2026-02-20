@@ -52,5 +52,74 @@ app.get("/api/jobs", async (req, res) => {
   }
 });
 
+
+// Simple admin key (set in Hostinger env vars)
+const ADMIN_KEY = process.env.ADMIN_KEY || "";
+
+// Insert/update (upsert) one job
+app.post("/api/admin/upsert-job", async (req, res) => {
+  try {
+    // Basic protection
+    const key = req.headers["x-admin-key"];
+    if (!ADMIN_KEY || key !== ADMIN_KEY) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+
+    const job = req.body;
+
+    // required fields for dedupe + minimum record
+    const required = ["source", "external_id", "title", "url"];
+    for (const f of required) {
+      if (!job[f]) return res.status(400).json({ ok: false, error: `Missing ${f}` });
+    }
+
+    const p = await getPool();
+
+    const sql = `
+      INSERT INTO jobs
+      (source, external_id, title, organization, location, country,
+       date_posted, deadline, url, apply_url, description, raw_json,
+       is_active, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+      ON DUPLICATE KEY UPDATE
+        title=VALUES(title),
+        organization=VALUES(organization),
+        location=VALUES(location),
+        country=VALUES(country),
+        date_posted=VALUES(date_posted),
+        deadline=VALUES(deadline),
+        url=VALUES(url),
+        apply_url=VALUES(apply_url),
+        description=VALUES(description),
+        raw_json=VALUES(raw_json),
+        is_active=1,
+        last_seen_at=NOW(),
+        updated_at=NOW()
+    `;
+
+    const params = [
+      job.source,
+      job.external_id,
+      job.title,
+      job.organization || null,
+      job.location || null,
+      job.country || null,
+      job.date_posted || null,
+      job.deadline || null,
+      job.url,
+      job.apply_url || null,
+      job.description || null,
+      job.raw_json ? JSON.stringify(job.raw_json) : null
+    ];
+
+    const [result] = await p.query(sql, params);
+
+    res.json({ ok: true, affectedRows: result.affectedRows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => console.log("Listening on", PORT));
