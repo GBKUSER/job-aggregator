@@ -2,13 +2,12 @@
   "name": "job-aggregator",
   "version": "1.0.0",
   "main": "index.js",
-"scripts": {
-  "start": "node index.js",
-  "dev": "node index.js"
-}
-"dependencies": {
-  "express": "^4.19.2",
-  "mysql2": "^3.11.0",
-  "dayjs": "^1.11.10"
-}
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mysql2": "^3.11.0"
+  }
 }
