@@ -8,38 +8,62 @@ let pool = null;
 async function getPool() {
   if (pool) return pool;
 
-  const mysql = require("mysql2/promise");
+  try {
+    const mysql = require("mysql2/promise");
 
-  pool = mysql.createPool({
-    host: process.env.DB_HOST || "127.0.0.1",
-    port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    connectionLimit: 10,
-  });
+    pool = mysql.createPool({
+      host: process.env.DB_HOST || "127.0.0.1",
+      port: Number(process.env.DB_PORT || 3306),
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      connectionLimit: 5,
+      waitForConnections: true,
+      queueLimit: 0,
+      connectTimeout: 5000,   // ✅ prevents hanging
+    });
 
-  return pool;
+    return pool;
+  } catch (e) {
+    // If mysql2 fails for any reason, do not crash app
+    pool = null;
+    throw e;
+  }
 }
 
 app.get("/", (req, res) => {
   res.send("Job Aggregator is running 🚀");
 });
 
+// Health (does NOT crash)
 app.get("/api/health", async (req, res) => {
   try {
     const p = await getPool();
     await p.query("SELECT 1");
     res.json({ ok: true, db: "connected" });
   } catch (e) {
-    res.json({ ok: true, db: "not connected", error: e.message });
+    res.json({
+      ok: true,
+      db: "not connected",
+      error: e.message,
+      host: process.env.DB_HOST,
+      port: process.env.DB_PORT,
+      db_name: process.env.DB_NAME,
+      db_user: process.env.DB_USER,
+    });
   }
 });
 
+// Jobs (does NOT crash)
 app.get("/api/jobs", async (req, res) => {
   try {
     const p = await getPool();
-    const [rows] = await p.query("SELECT * FROM jobs LIMIT 20");
+    const [rows] = await p.query(
+      `SELECT id,title,organization,location,country,date_posted,url
+       FROM jobs
+       ORDER BY COALESCE(date_posted, created_at) DESC
+       LIMIT 20`
+    );
     res.json({ ok: true, count: rows.length, jobs: rows });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
@@ -47,7 +71,4 @@ app.get("/api/jobs", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
-});
+app.listen(PORT, () => console.log("Server running on port", PORT));
