@@ -1,9 +1,32 @@
--- Central ingestion engine for MySQL 8+
+-- Central ingestion engine for MySQL 8+.
+-- Run once before deploying the new application code.
 
-ALTER TABLE jobs
-  ADD COLUMN IF NOT EXISTS content_hash CHAR(64) NULL;
+SET @db_name = DATABASE();
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_source_external ON jobs (source, external_id);
+SET @has_content_hash = (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = @db_name AND TABLE_NAME = 'jobs' AND COLUMN_NAME = 'content_hash'
+);
+SET @sql = IF(@has_content_hash = 0,
+  'ALTER TABLE jobs ADD COLUMN content_hash CHAR(64) NULL',
+  'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @has_source_external_unique = (
+  SELECT COUNT(*) FROM (
+    SELECT INDEX_NAME
+    FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = @db_name
+      AND TABLE_NAME = 'jobs'
+      AND NON_UNIQUE = 0
+    GROUP BY INDEX_NAME
+    HAVING GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) = 'source,external_id'
+  ) AS matching_unique_indexes
+);
+SET @sql = IF(@has_source_external_unique = 0,
+  'ALTER TABLE jobs ADD UNIQUE KEY uq_jobs_source_external (source, external_id)',
+  'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 CREATE TABLE IF NOT EXISTS ingestion_sources (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
